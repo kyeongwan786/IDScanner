@@ -8,7 +8,11 @@ version = "0.1.0" # 현재 프로젝트 버전을 지정한다.
 description = "신분증 정보 인식 및 검토 데스크톱 프로그램" # 프로젝트 설명을 지정한다.
 readme = "README.md" # 프로젝트 소개 문서를 지정한다.
 requires-python = ">=3.12,<3.13" # Python 3.12 버전대를 사용한다.
-dependencies = ["PySide6==6.10.1"] # GUI 라이브러리 버전을 고정한다.
+dependencies = [ # 앱 실행에 필요한 라이브러리를 지정한다.
+    "PySide6==6.10.1", # 데스크톱 화면을 구성한다.
+    "paddlepaddle==3.3.0", # OCR 모델을 실행할 연산 엔진을 설치한다.
+    "paddleocr==3.3.3", # 글자 검출과 인식 기능을 설치한다.
+] # 의존성 목록을 마친다.
 
 [project.gui-scripts] # 데스크톱 앱 실행 명령을 설정한다.
 idscanner = "idscanner.__main__:main" # idscanner 명령을 main 함수에 연결한다.
