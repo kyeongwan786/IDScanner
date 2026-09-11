@@ -33,7 +33,8 @@ src/
     ├── __main__.py
     ├── ocr/
     │   ├── __init__.py
-    │   └── __main__.py
+    │   ├── __main__.py
+    │   └── engine.py
     └── ui/
         ├── __init__.py
         ├── image_preview.py
@@ -42,6 +43,7 @@ src/
 ```
 
 - `__main__.py`: 애플리케이션 실행
+- `ocr/engine.py`: 화면 연결을 위한 OCR 엔진과 원본 결과 자료형 (아직 UI 미연결)
 - `ocr/__main__.py`: 한국어 OCR 명령줄 실행 및 원본 결과 확인
 - `ui/image_preview.py`: 이미지 표시와 크기 조절
 - `ui/main_window.py`: 메인 화면 구성
