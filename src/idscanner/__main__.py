@@ -8,7 +8,7 @@ from idscanner.ui.theme import APP_STYLE    # 앱 전체에 적용할 스타일�
 
 def main() -> int:  # 애플리케이션을 실행하고 종료 코드를 반환
     app = QApplication(sys.argv)    # 명령줄 인자를 전달해 Qt 앱을  생성
-    app.setApplicationDisplayName("IDScanner") # 이름 등록
+    app.setApplicationName("IDScanner") # 이름 등록
     app.setStyle("Fusion")
     app.setStyleSheet(APP_STYLE)
 
@@ -19,4 +19,3 @@ def main() -> int:  # 애플리케이션을 실행하고 종료 코드를 반환
 
 if __name__ == "__main__":  # 이 모듈이 실행 진입점으로 호출됐는지 확인
     raise SystemExit(main())    # 앱 실행 결과를 프로세스 종료 코드로 전달.
-    

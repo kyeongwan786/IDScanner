@@ -11,11 +11,11 @@ from PySide6.QtWidgets import ( # 화면 구성에 사용할 위젯과 레이아
     QWidget,    # 기본 위젯
 )
 
-class MainWinodw(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 메인 창 정의:
+class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 메인 창 정의:
 
-    def __init__(self) -> None: # 창 생성 시 피룡한 상태와 화면을 초기화:
+    def __init__(self) -> None: # 창 생성 시 필요한 상태와 화면을 초기화:
 
-        super().__init__()  # 부모 클래스의 창 최고화를실행
+        super().__init__()  # 부모 클래스의 창 초기화를 실행
 
         self._fields: dict[str, QLineEdit] = {} # 항목 이름별 입력창을 보관
 
@@ -85,6 +85,7 @@ class MainWinodw(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
         subtitle_label.setObjectName("subtitle")
 
         title_layout.addWidget(title_label)
+        title_layout.addWidget(subtitle_label)  # 제목 아래에 설명을 표시한다.
 
         header_layout.addLayout(title_layout)
 
@@ -126,7 +127,7 @@ class MainWinodw(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
         layout = panel.layout() # 공통 생성 과정에서 등록한 레이아웃 가져옴
 
         self._preview_label.setText(
-            "신분증 이미지 미리보기\n\n이미지를 불러오면 이곳에 표시됩ㄴ디ㅏ."
+            "신분증 이미지 미리보기\n\n이미지를 불러오면 이곳에 표시됩니다."
         )
 
         self._preview_label.setObjectName("preview")
@@ -165,28 +166,30 @@ class MainWinodw(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
         for key, label in field_specs:  # 정의한 순서대로 입력 항목들을 구성
 
-            self._add_result(layout, key, label)    # 라벨과 입력창 추가
+            self._add_result_field(layout, key, label)    # 라벨과 입력창 추가
 
-            hint_label = QLabel(
-                "인식된 내용은 직접 수정할 수 있습니다.\n"
-                "현재는 입력창의 편집 동작만 확인할 수 있습니다."
-            )
+        hint_label = QLabel(
+            "인식된 내용은 직접 수정할 수 있습니다.\n"
+            "현재는 입력창의 편집 동작만 확인할 수 있습니다."
+        )
 
-            hint_label.setObjectName("hint")
+        hint_label.setObjectName("hint")
 
-            hint_label.setWordWrap(True)
+        hint_label.setWordWrap(True)
+        layout.addWidget(hint_label)  # 안내 문구를 입력창 아래에 표시한다.
 
-            layout.addStretch()
+        layout.addStretch()
 
-            self._confirm_button.setObjectName("primaryButton")
+        self._confirm_button.setObjectName("primaryButton")
 
-            self._confirm_button.setEnabled(False)
+        self._confirm_button.setEnabled(False)
 
-            layout.addWidget(self._confirm_button)
+        layout.addWidget(self._confirm_button)
 
-            return panel
+        return panel
+
     def _add_result_field(  # 라벨과 입력창을 한 쌍으로 추가하는 메서드 정의
-            self,   # 현재 창 인스터스 받는다.
+            self,   # 현재 창 인스턴스 받는다.
             layout: QVBoxLayout,    # 항목 추가 레이아웃
             key: str,   # 입력창을 찾을 때 사용할 내부 이름
             label: str, # 화면에 표시할 항목 이름
@@ -208,9 +211,3 @@ class MainWinodw(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
         layout.addWidget(field_label)
 
         layout.addWidget(editor)
-
-
-
-
-
-
