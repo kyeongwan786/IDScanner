@@ -22,7 +22,7 @@
 - 최종 실행 OS: Windows
 - Python: 3.12
 - GUI: PySide6
-- OCR 엔진: 샘플 평가 후 선정
+- OCR 엔진: PaddleOCR 3.3.3 / PaddlePaddle 3.3.0 (PP-OCRv5 한국어 모델)
 
 ## 프로젝트 구조
 
@@ -31,6 +31,9 @@ src/
 └── idscanner/
     ├── __init__.py
     ├── __main__.py
+    ├── ocr/
+    │   ├── __init__.py
+    │   └── __main__.py
     └── ui/
         ├── __init__.py
         ├── image_preview.py
@@ -39,11 +42,12 @@ src/
 ```
 
 - `__main__.py`: 애플리케이션 실행
+- `ocr/__main__.py`: 한국어 OCR 명령줄 실행 및 원본 결과 확인
 - `ui/image_preview.py`: 이미지 표시와 크기 조절
 - `ui/main_window.py`: 메인 화면 구성
 - `ui/theme.py`: 공통 스타일
 
-OCR, 신분증 분류·추출, 검증 모듈은 구현 단계에서 추가한다.
+신분증 분류·추출, 검증 모듈은 구현 단계에서 추가한다.
 
 ## 개발 환경 구성
 
@@ -55,6 +59,9 @@ python3.12 -m venv .venv
 
 # 가상환경을 활성화한다.
 source .venv/bin/activate
+
+# macOS CPU용 PaddlePaddle을 공식 저장소에서 설치한다.
+python -m pip install paddlepaddle==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 
 # 프로젝트와 의존성을 개발 모드로 설치한다.
 python -m pip install -e .
@@ -91,6 +98,21 @@ python -m idscanner
 .\.venv\Scripts\python.exe -m idscanner
 ```
 
+## 한국어 OCR 확인
+
+가상 정보가 담긴 PNG·JPG 이미지를 `data/local/ocr_sample.png`에 준비한다.
+
+```bash
+# macOS에서 가상 정보 이미지의 원본 OCR 결과를 출력한다.
+.venv/bin/python -m idscanner.ocr data/local/ocr_sample.png
+```
+
+첫 실행에는 모델 다운로드를 위한 인터넷 연결이 필요하다.
+모델 다운로드 후 인식은 로컬 CPU에서 수행한다.
+현재는 정방향 이미지로 확인하며 방향·굴곡 보정 기능은 비활성화했다.
+출력은 필터링 전 OCR 원본이며, 점수는 정답 확률을 의미하지 않는다.
+실제 개인정보가 포함된 출력은 이슈나 PR에 첨부하지 않는다.
+
 ## 현재 구현 범위
 
 - 기본 화면과 공통 스타일
@@ -100,7 +122,9 @@ python -m idscanner
 - 편집 가능한 결과 입력창
 - 새 이미지 로딩 성공 시 이전 입력값 초기화
 
-자동 분류, OCR, 검증, 결과 저장은 아직 구현하지 않았다.
+- 터미널에서 한국어 OCR 원본 문자열·인식 점수·좌표 확인
+
+자동 분류, OCR 화면 연결, 항목 검증, 결과 저장은 아직 구현하지 않았다.
 Windows 실행은 별도 검증이 필요하다.
 
 ## 개발 원칙
