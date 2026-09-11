@@ -1,15 +1,22 @@
-from PySide6.QtCore import Qt   # 정렬 방향 등 Qt의 공통 설정값을 가져옴.
+from PySide6.QtCore import Qt  # 화면 정렬 옵션을 가져온다.
+from PySide6.QtGui import (  # 이미지 읽기와 표시 기능을 가져온다.
+    QImageReader,  # 파일에서 이미지를 읽는다.
+    QPixmap,  # 읽은 이미지를 화면 표시용으로 변환한다.
+)  # 이미지 관련 import를 마친다.
+from PySide6.QtWidgets import (  # 화면 구성 요소를 가져온다.
+    QFileDialog,  # 파일 선택 창
+    QFrame,  # 패널 컨테이너
+    QHBoxLayout,  # 가로 배치
+    QLabel,  # 텍스트 표시
+    QLineEdit,  # 결과 입력창
+    QMainWindow,  # 메인 창
+    QMessageBox,  # 오류 안내 창
+    QPushButton,  # 버튼
+    QVBoxLayout,  # 세로 배치
+    QWidget,  # 기본 위젯
+)  # 위젯 관련 import를 마친다.
 
-from PySide6.QtWidgets import ( # 화면 구성에 사용할 위젯과 레이아웃
-    QFrame, # 패널 컨테이너
-    QHBoxLayout,    # 가로 배치
-    QLabel, # 텍스트 이미지 표시
-    QLineEdit,  # 한 줄 입력
-    QMainWindow,    # 메인창
-    QPushButton,    # 버튼
-    QVBoxLayout,    # 세로배치
-    QWidget,    # 기본 위젯
-)
+from idscanner.ui.image_preview import ImagePreview  # 이미지 미리보기 위젯을 가져온다.
 
 class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 메인 창 정의:
 
@@ -21,7 +28,7 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
         self._status_label = QLabel("준비") # 현재 처리 상태 표시
 
-        self._preview_label = QLabel()  # 이미지 또는 이미지 안내 문구 표시
+        self._preview_label = ImagePreview()  # 이미지 또는 이미지 안내 문구 표시
 
         self._document_type_label = QLabel("신분증 종류: 인식 대기")    # 판별 상태 표시
 
@@ -120,33 +127,24 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
         return panel
 
-    def _build_preview_panel(self) -> QFrame:   # 이미지 미리보기 패널
+    def _build_preview_panel(self) -> QFrame:   # 미리보기와 파일 선택 버튼 배치
 
         panel = self._create_panel("신분증 이미지")
 
-        layout = panel.layout() # 공통 생성 과정에서 등록한 레이아웃 가져옴
+        layout = panel.layout() # 패널에 등록된 레이아웃을 가져온다.
 
-        self._preview_label.setText(
-            "신분증 이미지 미리보기\n\n이미지를 불러오면 이곳에 표시됩니다."
-        )
+        layout.addWidget(self._preview_label, 1)    # 남는 공간에 미리 보기 배치
 
-        self._preview_label.setObjectName("preview")
+        self._open_button.setEnabled(True)
 
-        self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._open_button.setToolTip("PNG 또는 JPG 이미지를 선택하세요.")
 
-        self._preview_label.setWordWrap(True)
+        self._open_button.clicked.connect(self._open_image)
 
-        self._preview_label.setMinimumHeight(280)
-
-        layout.addWidget(self._preview_label, 1)
-
-        self._open_button.setEnabled(False) # 이미지 기능을 연결할때까지 비활성화
-
-        self._open_button.setToolTip("이미지 불러오기는 다음 단계에서 연결")
-
-        layout.addWidget(self._open_button) # 이미지 선택 버튼을 패널 하단에 추가한다.
+        layout.addWidget(self._open_button)
 
         return panel
+
 
     def _build_result_panel(self) -> QFrame:    # 인식 결과를 편집할 패널을 구성
         panel = self._create_panel("인식 결과")
@@ -211,3 +209,31 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
         layout.addWidget(field_label)
 
         layout.addWidget(editor)
+
+    def _open_image(self) -> None:  # 파일을 선택하고 읽기에 성공한 이미지만 반영한다.
+        file_path, _ = QFileDialog.getOpenFileName(  # 파일 경로와 선택한 필터를 받는다.
+            self,  # 파일 선택 창의 부모를 지정한다.
+            "신분증 이미지 선택",  # 파일 선택 창 제목을 지정한다.
+            "",  # 기본 시작 폴더를 사용한다.
+            "이미지 파일 (*.png *.jpg *.jpeg)",  # 선택할 이미지 형식을 지정한다.
+        )  # 파일 선택을 마친다.
+        if not file_path:  # 사용자가 선택을 취소했는지 확인한다.
+            return  # 기존 이미지와 입력값을 유지한다.
+
+        reader = QImageReader(file_path)  # 선택한 파일의 이미지 리더를 생성한다.
+        reader.setAutoTransform(True)  # 이미지에 기록된 방향 정보를 적용한다.
+        image = reader.read()  # 파일에서 이미지를 읽는다.
+        if image.isNull():  # 손상된 파일 등으로 읽기에 실패했는지 확인한다.
+            QMessageBox.warning(  # 실패 안내 창을 표시한다.
+                self,  # 안내 창의 부모를 지정한다.
+                "이미지 불러오기 실패",  # 안내 창 제목을 지정한다.
+                "이미지를 읽을 수 없습니다. 다른 PNG 또는 JPG 파일을 선택하세요.",  # 해결 방법을 안내한다.
+            )  # 오류 안내를 마친다.
+            return  # 기존 이미지와 입력값을 유지한다.
+
+        self._preview_label.set_image(QPixmap.fromImage(image))  # 성공한 이미지를 표시한다.
+        for editor in self._fields.values():  # 이전 결과 입력창을 순회한다.
+            editor.clear()  # 새 이미지에 이전 입력값이 남지 않도록 비운다.
+        self._document_type_label.setText("신분증 종류 · 인식 대기")  # 판별 상태를 초기화한다.
+        self._status_label.setText("이미지 준비")  # 이미지 로딩 완료를 표시한다.
+        self._confirm_button.setEnabled(False)  # 인식과 검증 전에는 확정을 막는다.
