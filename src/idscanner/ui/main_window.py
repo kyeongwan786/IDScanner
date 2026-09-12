@@ -1,5 +1,10 @@
-from PySide6.QtCore import Qt  # 화면 정렬 옵션을 가져온다.
+from PySide6.QtCore import (
+    Qt, # 화면 정렬 옵션
+    Slot,   # 화면에서 실행할 시그널 수신 메서드 지정
+) # 화면 정렬 옵션을 가져온다.
 from PySide6.QtGui import (  # 이미지 읽기와 표시 기능을 가져온다.
+    QCloseEvent,    # 창 종료 요청을 처리한다.
+    QImage,         # 현재 선택한 이미지를 보관
     QImageReader,  # 파일에서 이미지를 읽는다.
     QPixmap,  # 읽은 이미지를 화면 표시용으로 변환한다.
 )  # 이미지 관련 import를 마친다.
@@ -10,11 +15,16 @@ from PySide6.QtWidgets import (  # 화면 구성 요소를 가져온다.
     QLabel,  # 텍스트 표시
     QLineEdit,  # 결과 입력창
     QMainWindow,  # 메인 창
-    QMessageBox,  # 오류 안내 창
+    QMessageBox,  # 안내 창
+    QPlainTextEdit,  # 여러 줄의 인식 결과 표시
     QPushButton,  # 버튼
     QVBoxLayout,  # 세로 배치
     QWidget,  # 기본 위젯
-)  # 위젯 관련 import를 마친다.
+)  # QtWidgets import를 마친다.
+
+from idscanner.ocr.engine import OcrText  # 원본 인식 결과 자료형을 가져온다.
+
+from idscanner.ocr.worker import OcrWorker  # 백그라운드 인식 작업을 가져온다.
 
 from idscanner.ui.image_preview import ImagePreview  # 이미지 미리보기 위젯을 가져온다.
 
@@ -23,6 +33,16 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
     def __init__(self) -> None: # 창 생성 시 필요한 상태와 화면을 초기화:
 
         super().__init__()  # 부모 클래스의 창 초기화를 실행
+
+        self._image = QImage()  # 화면에 불러온 이미지를 보관
+
+        self._worker: OcrWorker | None = None # 진행 중인 작업을 보관한다.
+
+        self._ocr_results: list[OcrText] = []   # 글자 점수 좌표가 포함된 원본 결과를 보관
+
+        self._recognize_button = QPushButton("인식 시작")   # 인식 실행 버튼을 만든다.
+
+        self._ocr_output = QPlainTextEdit()     # 인식된 글자를 표시할 영역을 만든다.
 
         self._fields: dict[str, QLineEdit] = {} # 항목 이름별 입력창을 보관
 
@@ -127,23 +147,46 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
         return panel
 
-    def _build_preview_panel(self) -> QFrame:   # 미리보기와 파일 선택 버튼 배치
+    def _build_preview_panel(self) -> QFrame:   # 이미지와 인식 실행 영역 구성
 
-        panel = self._create_panel("신분증 이미지")
+        panel = self._create_panel("신분증 이미지") # 공통 패널을 생성
 
-        layout = panel.layout() # 패널에 등록된 레이아웃을 가져온다.
+        layout = panel.layout() # 패널의 레이아웃을 가져온다.
 
-        layout.addWidget(self._preview_label, 1)    # 남는 공간에 미리 보기 배치
+        layout.addWidget(self._preview_label, 1)    # 남는 세로 공간에 이미지를 배치한다.
 
-        self._open_button.setEnabled(True)
+        buttons = QHBoxLayout() # 두 버튼 가로 배치
 
-        self._open_button.setToolTip("PNG 또는 JPG 이미지를 선택하세요.")
+        self._open_button.setEnabled(True)  # 파일 선택을 허용
 
-        self._open_button.clicked.connect(self._open_image)
+        self._open_button.setToolTip("PNG 또는 JPG 이미지를 선택하세요.")   # 지원 형식을 안내한다.
 
-        layout.addWidget(self._open_button)
+        self._open_button.clicked.connect(self._open_image) # 파일 선택 동작 연결
 
-        return panel
+        buttons.addWidget(self._open_button)    # 파일 선택 버튼 추가
+
+        self._recognize_button.setObjectName("primaryButton")
+
+        self._recognize_button.setEnabled(False)
+
+        self._recognize_button.clicked.connect(self._start_ocr)
+
+        buttons.addWidget(self._recognize_button)  # 인식 버튼을 화면에 배치한다.
+
+        layout.addLayout(buttons)
+
+        layout.addWidget(QLabel("인식된 글자")) # 글자 영역의 제목을 추가
+
+        self._ocr_output.setPlaceholderText("인식 시작을 누르면 글자가 표시됩니다.")  # 초기 안내를 표시한다.
+
+        self._ocr_output.setReadOnly(True)  # 원본 결과는 읽기 전용
+
+        self._ocr_output.setFixedHeight(140) # 긴 결과는 영역안에서 스크롤
+
+        layout.addWidget(self._ocr_output)  # 결과 표시 영역 추가
+
+        return panel    # 완성한 패널을 반환
+
 
 
     def _build_result_panel(self) -> QFrame:    # 인식 결과를 편집할 패널을 구성
@@ -167,8 +210,8 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
             self._add_result_field(layout, key, label)    # 라벨과 입력창 추가
 
         hint_label = QLabel(
-            "인식된 내용은 직접 수정할 수 있습니다.\n"
-            "현재는 입력창의 편집 동작만 확인할 수 있습니다."
+            "읽은 글자는 왼쪽에 표시됩니다.\n"
+            "항목별 자동 입력은 아직 연결되지 않았습니다."
         )
 
         hint_label.setObjectName("hint")
@@ -210,30 +253,140 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
         layout.addWidget(editor)
 
-    def _open_image(self) -> None:  # 파일을 선택하고 읽기에 성공한 이미지만 반영한다.
-        file_path, _ = QFileDialog.getOpenFileName(  # 파일 경로와 선택한 필터를 받는다.
-            self,  # 파일 선택 창의 부모를 지정한다.
-            "신분증 이미지 선택",  # 파일 선택 창 제목을 지정한다.
-            "",  # 기본 시작 폴더를 사용한다.
-            "이미지 파일 (*.png *.jpg *.jpeg)",  # 선택할 이미지 형식을 지정한다.
-        )  # 파일 선택을 마친다.
-        if not file_path:  # 사용자가 선택을 취소했는지 확인한다.
-            return  # 기존 이미지와 입력값을 유지한다.
+    def _open_image(self) -> None:  # 파일을 선택하고 성공한 이미지만 화면에 반영한다.
 
-        reader = QImageReader(file_path)  # 선택한 파일의 이미지 리더를 생성한다.
-        reader.setAutoTransform(True)  # 이미지에 기록된 방향 정보를 적용한다.
-        image = reader.read()  # 파일에서 이미지를 읽는다.
-        if image.isNull():  # 손상된 파일 등으로 읽기에 실패했는지 확인한다.
-            QMessageBox.warning(  # 실패 안내 창을 표시한다.
-                self,  # 안내 창의 부모를 지정한다.
-                "이미지 불러오기 실패",  # 안내 창 제목을 지정한다.
-                "이미지를 읽을 수 없습니다. 다른 PNG 또는 JPG 파일을 선택하세요.",  # 해결 방법을 안내한다.
-            )  # 오류 안내를 마친다.
-            return  # 기존 이미지와 입력값을 유지한다.
+        if self._worker is not None:    # 진행 중이거나 종료 처리 중인 작업을 확인한다.
 
-        self._preview_label.set_image(QPixmap.fromImage(image))  # 성공한 이미지를 표시한다.
-        for editor in self._fields.values():  # 이전 결과 입력창을 순회한다.
-            editor.clear()  # 새 이미지에 이전 입력값이 남지 않도록 비운다.
-        self._document_type_label.setText("신분증 종류 · 인식 대기")  # 판별 상태를 초기화한다.
-        self._status_label.setText("이미지 준비")  # 이미지 로딩 완료를 표시한다.
-        self._confirm_button.setEnabled(False)  # 인식과 검증 전에는 확정을 막는다.
+            return  # 인식 중에는 이미지를 바꾸지 않는다.
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,   # 파일 선택창의 부모를 지정
+            "신분증 이미지 선택",   # 파일 선택 창 제목을 지정
+            "",     # 기본 시작 폴더를 사용
+            "이미지 파일 (*.png *.jpg *.jpeg)",
+        )
+
+        if not file_path:   # 사용자가 선택을 취소했는지 확인
+            return          # 기존 이미지와 결과를 유지
+
+        reader = QImageReader(file_path)    # 이미지 리더를 생성.
+        reader.setAutoTransform(True)   # 이미지에 기록된 방향 정보를 적용
+
+        image = reader.read()   # 파일에서 이미지를 읽는다
+
+        if image.isNull():  # 이미지 읽기에 실패했는지 확인한다.
+            QMessageBox.warning(
+                self,   # 안내 창의 부모를 지정
+                "이미지 불러오기 실패", # 안내 제목을 지정한다.
+                "이미지를 읽을 수 없습니다. 다른 이미지 파일을 선택하세요."
+            )
+
+            return
+
+        self._preview_label.set_image(QPixmap.fromImage(image)) # 성공한 이미지를 표시
+
+        self._image = image.copy()  # 화면과 같은 이미지를 인식용으로 보관
+
+        self._ocr_results.clear()   # 이전 이미지의 원본 결과를 비운다.
+
+        self._ocr_output.clear()    # 이전 이미지의 결과 표시를 비운다.
+
+        for editor in self._fields.values():    # 기존 결과 입력창을 순회
+
+            editor.clear()  # 이전 이미지의 입력값을 비운다.
+
+        self._document_type_label.setText("신분증 종류: 인식 대기")
+
+        self._status_label.setText("이미지 준비")
+
+        self._recognize_button.setEnabled(True)
+
+        self._confirm_button.setEnabled(False)
+
+    @Slot() # 버튼 클릭을 화면 스레드에서 처리한다.
+    def _start_ocr(self) -> None:   # 현재 이미지의 인식을 시작한다.
+
+        if self._image.isNull() or self._worker is not None: # 이미지 없음과 중복 실행 확인
+            return
+
+        self._open_button.setEnabled(False) # 인식 중 이미지 변경을 막는다.
+
+        self._recognize_button.setEnabled(False)    # 중복 인식을 막는다.
+
+        self._confirm_button.setEnabled(False)  # 확정 기능은 아직 활성화 안한다.
+
+        self._ocr_results.clear()   # 이전 원본 결과를 비운다.
+
+        self._ocr_output.clear()    # 이전 결과 표시를 비운다.
+
+        self._status_label.setText("인식 준비 중")
+
+        self._worker = OcrWorker(self._image, self) # 현재 이미지로 작업을 생성한다.
+
+        self._worker.progress.connect(self._status_label.setText)   # 준비 인식 상태를 표시
+
+        self._worker.result_ready.connect(self._on_ocr_result)  # 인식 결과를 화면으로 전달한다.
+
+        self._worker.failed.connect(self._on_ocr_error) # 실패 안내를 받는다.
+
+        self._worker.finished.connect(self._on_ocr_finished)    # 공통 종료 처리를 연결
+
+        self._worker.start()
+
+    @Slot(object)   # 백그라운드 결과를 화면 스레드에서 받는다.
+
+    def _on_ocr_result(self, lines: list[OcrText]) -> None: # 결과를 보관하고 표시
+
+        self._ocr_results = list(lines) # 점수와 좌표를 포함한 원본 결과를 보관한다.
+
+        if not lines:   # 글자를 찾지 못한 경우를 확인한다.
+
+            self._status_label.setText("확인 필요") # 빈 결과 상태를 표시
+
+            self._ocr_output.setPlainText("글자를 찾지 못했습니다. 다른 이미지로 다시 시도해주세요.")
+
+            return
+
+        # 문자열을 줄별로 표시
+        self._ocr_output.setPlainText("\n".join(line.text for line in lines))
+
+        #인식 완료 상태 표시
+        self._status_label.setText("글자 인식 완료")
+
+    # 백그라운드 실패 알림을 화면 스레드에서 받는다.
+    @Slot(str)
+
+    # 인식 실패를 표시한다.
+    def _on_ocr_error(self, message: str) -> None:
+
+        self._status_label.setText("인식 실패") # 실패 상태로 변경
+
+        self._ocr_output.setPlainText(message)  # 결과 영역에 실패 안내를 표시
+
+    # 스레드가 종료된 뒤 화면 스레드에서 정리
+    @Slot()
+    def _on_ocr_finished(self) -> None: # 작업 객체와 버튼 상태를 정리
+
+        if self._worker is not None:    # 정리할 작업 객체가 있는지 확인
+
+            self._worker.deleteLater()  # Qt 이벤트 처리 과정에서 객체를 제거한다.
+
+            self._worker = None # 다음 작업을 받을 수 있도록 참조를 비운다.
+
+        self._open_button.setEnabled(True)
+
+        self._recognize_button.setEnabled(not self._image.isNull())
+
+    def closeEvent(self, event: QCloseEvent) -> None:   # 창 종료 요청을 처리
+
+        if self._worker is not None:    # 진행중이거나 종료 처리 중인 작업을 확인
+
+            event.ignore()  # 실행중인 스레드가 파괴되지 않도록 종료를 미룬다.
+
+            QMessageBox.information(
+                self,
+                "인식 진행 중",
+                "인식이 끝난 뒤 창을 닫아주세요",
+            )
+            return
+        super().closeEvent(event)
