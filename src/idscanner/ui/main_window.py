@@ -26,9 +26,11 @@ from idscanner.documents.classifier import (  # 신분증 종류 판별 기능�
     DocumentType,  # 종류 후보의 자료형을 가져온다.
     classify_document,  # OCR 제목 판별 함수를 가져온다.
 )  # 판별 기능 import를 마친다.
+from idscanner.documents.resident_card import extract_resident_number  # 주민등록증 번호 추출 함수를 가져온다.
 from idscanner.ocr.engine import OcrText  # 원본 OCR 자료형을 가져온다.
 from idscanner.ocr.worker import OcrWorker  # 백그라운드 인식 작업을 가져온다.
 from idscanner.ui.image_preview import ImagePreview  # 이미지 미리보기 위젯을 가져온다.
+
 
 
 class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 메인 창 정의:
@@ -212,10 +214,10 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
             self._add_result_field(layout, key, label)    # 라벨과 입력창 추가
 
-        hint_label = QLabel(
-            "읽은 글자는 왼쪽에 표시됩니다.\n"
-            "항목별 자동 입력은 아직 연결되지 않았습니다."
-        )
+        hint_label = QLabel(  # 자동 입력 범위와 수정 방법을 안내한다.
+            "주민등록증 후보의 번호를 자동 입력합니다.\n"  # 이번 단계에서 지원하는 항목을 설명한다.
+            "원본과 비교해 수정하세요. 재인식하면 번호가 초기화됩니다.",  # 수정과 초기화 동작을 안내한다.
+        )  # 안내 문구 생성을 마친다.
 
         hint_label.setObjectName("hint")
 
@@ -322,6 +324,8 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
         self._ocr_output.clear()    # 이전 결과 표시를 비운다.
 
+        self._fields["resident_number"].clear() # 재인식 전에 번호와 수정값을 비운다.
+
         self._document_type_label.setText("신분증 종류: 인식 대기")  # 재인식 전에 이전 종류 표시를 초기화한다.
 
         self._status_label.setText("인식 준비 중")
@@ -339,30 +343,39 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
         self._worker.start()
 
     @Slot(object)   # OCR 결과를 화면 스레드에서 처리
-    def _on_ocr_result(self, lines: list[OcrText]) -> None: # 원본 글자와 신분증 종류 후보 표시
-        self._ocr_results = list(lines) # 수정값과 구분할 원본 OCR 결과를 보관
+    def _on_ocr_result(self, lines: list[OcrText]) -> None: # 종류 후보와 추출한 번호를 표시
+        self._ocr_results = list(lines) # 원본 OCR 결과를 수정값과 별도로 보관
 
-        self._document_type_label.setText("신분증 종류: 확인 필요")  # 판별 전에는 종류를 확정하지 않는다.
+        self._fields["resident_number"].clear() # 이번 결과에 이전 번호가 섞이지 않도록 비운다.
 
-        if not lines:   # 인식된 글자가 없는지 확인
-            self._status_label.setText("확인 필요")  # 빈 결과 상태를 표시한다.
+        self._document_type_label.setText("신분증 종류: 확인 필요") # 판별 전에는 종류를 확정하지 않는다.
 
+        self._status_label.setText("확인 필요") # 자동 입력 여부와 관계없이 사용자 확인 요구
+
+        if not lines:  # 인식된 글자가 없는지 확인한다.
             self._ocr_output.setPlainText("글자를 찾지 못했습니다. 다른 이미지로 다시 시도해주세요.")  # 빈 결과의 재시도를 안내한다.
+            return  # 이번 결과 처리를 종료한다.
 
-            return  # 빈 결과는 판별을 진행하지 않는다.
-        self._ocr_output.setPlainText(  # 인식된 원본 글자를 표시
-            "\n".join(line.text for line in lines), # 각 인식 항목을 줄바꿈으로 구분
-        )  # 원본 결과 표시를 마친다.
+        self._ocr_output.setPlainText(  # 원본 글자를 화면에 표시한다.
+            "\n".join(line.text for line in lines),  # 항목을 줄바꿈으로 구분한다.
+        )  # 원본 표시를 마친다.
 
-        document_type = classify_document(lines)    # 화면과 분리된 함수로 종류를 판별
+        document_type = classify_document(lines)    # 제목으로 신분증 종류 후보 판별
 
-        if document_type == DocumentType.RESIDENT_CARD: # 주민등록증 제목 조건을 만족했는지 확인
-            self._document_type_label.setText("신분증 종류: 주민등록증 후보")  # 판별한 후보를 표시한다.
+        if document_type != DocumentType.RESIDENT_CARD: # 주민등록증 후보가 아니면 전용 규칙을 적용하지않는다.
+            return  # 이번 결과 처리를 종료한다.
 
-            self._status_label.setText("종류 확인 필요")  # 원본과 대조하도록 안내한다.
+        self._document_type_label.setText("신분증 종류: 주민등록증 후보")  # 종류 후보를 표시한다.
 
-        else:  # 현재 규칙으로 종류를 판단하지 못한 경우다.
-            self._status_label.setText("확인 필요")  # 사용자 확인이 필요한 상태를 표시한다.
+        number = extract_resident_number(lines) # 번호 형식과 점수 조건을 확인
+
+        if number is None:  # 번호 후보를 하나로 선택할 수 없는지 확인한다.
+            self._status_label.setText("번호 확인 필요")  # 자동 입력하지 못한 번호의 확인을 요청한다.
+            return  # 이번 결과 처리를 종료한다.
+
+        self._fields["resident_number"].setText(number)  # 번호 후보를 편집 가능한 입력창에 넣는다.
+
+        self._status_label.setText("추출값 확인 필요")  # 자동 입력한 값도 원본과 대조하도록 안내한다.
 
     # 백그라운드 실패 알림을 화면 스레드에서 받는다.
     @Slot(str)
