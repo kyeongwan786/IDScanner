@@ -22,11 +22,14 @@ from PySide6.QtWidgets import (  # 화면 구성 요소를 가져온다.
     QWidget,  # 기본 위젯
 )  # QtWidgets import를 마친다.
 
-from idscanner.ocr.engine import OcrText  # 원본 인식 결과 자료형을 가져온다.
-
+from idscanner.documents.classifier import (  # 신분증 종류 판별 기능을 가져온다.
+    DocumentType,  # 종류 후보의 자료형을 가져온다.
+    classify_document,  # OCR 제목 판별 함수를 가져온다.
+)  # 판별 기능 import를 마친다.
+from idscanner.ocr.engine import OcrText  # 원본 OCR 자료형을 가져온다.
 from idscanner.ocr.worker import OcrWorker  # 백그라운드 인식 작업을 가져온다.
-
 from idscanner.ui.image_preview import ImagePreview  # 이미지 미리보기 위젯을 가져온다.
+
 
 class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 메인 창 정의:
 
@@ -319,6 +322,8 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
         self._ocr_output.clear()    # 이전 결과 표시를 비운다.
 
+        self._document_type_label.setText("신분증 종류: 인식 대기")  # 재인식 전에 이전 종류 표시를 초기화한다.
+
         self._status_label.setText("인식 준비 중")
 
         self._worker = OcrWorker(self._image, self) # 현재 이미지로 작업을 생성한다.
@@ -333,25 +338,31 @@ class MainWindow(QMainWindow):  # 신분증 이미지와 결과를 보여 줄 �
 
         self._worker.start()
 
-    @Slot(object)   # 백그라운드 결과를 화면 스레드에서 받는다.
+    @Slot(object)   # OCR 결과를 화면 스레드에서 처리
+    def _on_ocr_result(self, lines: list[OcrText]) -> None: # 원본 글자와 신분증 종류 후보 표시
+        self._ocr_results = list(lines) # 수정값과 구분할 원본 OCR 결과를 보관
 
-    def _on_ocr_result(self, lines: list[OcrText]) -> None: # 결과를 보관하고 표시
+        self._document_type_label.setText("신분증 종류: 확인 필요")  # 판별 전에는 종류를 확정하지 않는다.
 
-        self._ocr_results = list(lines) # 점수와 좌표를 포함한 원본 결과를 보관한다.
+        if not lines:   # 인식된 글자가 없는지 확인
+            self._status_label.setText("확인 필요")  # 빈 결과 상태를 표시한다.
 
-        if not lines:   # 글자를 찾지 못한 경우를 확인한다.
+            self._ocr_output.setPlainText("글자를 찾지 못했습니다. 다른 이미지로 다시 시도해주세요.")  # 빈 결과의 재시도를 안내한다.
 
-            self._status_label.setText("확인 필요") # 빈 결과 상태를 표시
+            return  # 빈 결과는 판별을 진행하지 않는다.
+        self._ocr_output.setPlainText(  # 인식된 원본 글자를 표시
+            "\n".join(line.text for line in lines), # 각 인식 항목을 줄바꿈으로 구분
+        )  # 원본 결과 표시를 마친다.
 
-            self._ocr_output.setPlainText("글자를 찾지 못했습니다. 다른 이미지로 다시 시도해주세요.")
+        document_type = classify_document(lines)    # 화면과 분리된 함수로 종류를 판별
 
-            return
+        if document_type == DocumentType.RESIDENT_CARD: # 주민등록증 제목 조건을 만족했는지 확인
+            self._document_type_label.setText("신분증 종류: 주민등록증 후보")  # 판별한 후보를 표시한다.
 
-        # 문자열을 줄별로 표시
-        self._ocr_output.setPlainText("\n".join(line.text for line in lines))
+            self._status_label.setText("종류 확인 필요")  # 원본과 대조하도록 안내한다.
 
-        #인식 완료 상태 표시
-        self._status_label.setText("글자 인식 완료")
+        else:  # 현재 규칙으로 종류를 판단하지 못한 경우다.
+            self._status_label.setText("확인 필요")  # 사용자 확인이 필요한 상태를 표시한다.
 
     # 백그라운드 실패 알림을 화면 스레드에서 받는다.
     @Slot(str)
